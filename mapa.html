@@ -1,0 +1,1433 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>ULTRA Maps • A* + Trânsito + Veículos (single file)</title>
+    <style>
+      :root {
+        /* Core palette (map-polish) */
+        --land: #eaeef1;
+        --park: #d9ead3;
+        --water: #cfe6ff;
+        --minor-casing: #c4cdd3;
+        --minor-inner: #ffffff;
+        --pri-casing: #afbbc4;
+        --pri-inner: #fffef6;
+        --lane: #e6e9ee;
+        --label: #2b3440;
+        --label-bg: #ffffffcc;
+        --panel: #ffffff;
+        --panel-brd: #e5e7eb;
+        --text: #0f172a;
+        --muted: #64748b;
+        --accent: #2563eb;
+        --path: #0ea5e9;
+        --altpath: #f59e0b;
+        --iso: #7dd3fc42;
+        --heat: #ef444560;
+        --blocked: #11182755;
+        --veh: #111827;
+        --veh-shadow: #00000025;
+        --shadow: 0 10px 30px rgba(0, 0, 0, 0.12);
+      }
+      .dark {
+        --land: #0c1116;
+        --park: #14281a;
+        --water: #0b274b;
+        --minor-casing: #1e2a33;
+        --minor-inner: #22303a;
+        --pri-casing: #21303a;
+        --pri-inner: #263741;
+        --lane: #2b3a44;
+        --label: #dce6ef;
+        --label-bg: #0000006c;
+        --panel: #0c1116;
+        --panel-brd: #1b2630;
+        --text: #e6edf5;
+        --muted: #8fa0ad;
+        --accent: #60a5fa;
+        --path: #60a5fa;
+        --altpath: #fbbf24;
+        --iso: #22d3ee3d;
+        --heat: #ef44454f;
+        --veh: #e5e7eb;
+        --veh-shadow: #00000040;
+      }
+      * {
+        box-sizing: border-box;
+        font-family: Inter, ui-sans-serif, system-ui, Segoe UI, Roboto, "Helvetica Neue", Arial;
+      }
+      html,
+      body {
+        height: 100%;
+      }
+      body {
+        margin: 0;
+        background: var(--land);
+        color: var(--text);
+        overflow: hidden;
+      }
+      canvas {
+        display: block;
+        width: 100vw;
+        height: 100vh;
+        background: var(--land);
+      }
+      /* UI */
+      .topbar {
+        position: fixed;
+        left: 16px;
+        right: 16px;
+        top: 16px;
+        display: flex;
+        gap: 8px;
+        align-items: center;
+        padding: 10px;
+        background: var(--panel);
+        border: 1px solid var(--panel-brd);
+        border-radius: 14px;
+        box-shadow: var(--shadow);
+        z-index: 40;
+      }
+      .search {
+        flex: 1;
+        display: flex;
+        gap: 8px;
+        align-items: center;
+        border: 1px solid var(--panel-brd);
+        border-radius: 10px;
+        padding: 8px 10px;
+        background: transparent;
+      }
+      .search input {
+        flex: 1;
+        border: none;
+        background: transparent;
+        outline: 0;
+        color: var(--text);
+      }
+      .btn {
+        padding: 8px 10px;
+        border-radius: 10px;
+        border: 1px solid var(--panel-brd);
+        background: transparent;
+        color: var(--text);
+        cursor: pointer;
+      }
+      .btn.primary {
+        background: linear-gradient(90deg, #6aa8ff, var(--accent));
+        color: white;
+        border: none;
+      }
+      .stack {
+        position: fixed;
+        left: 16px;
+        top: 84px;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        z-index: 30;
+      }
+      .control {
+        width: 44px;
+        height: 44px;
+        display: grid;
+        place-items: center;
+        background: var(--panel);
+        border: 1px solid var(--panel-brd);
+        border-radius: 10px;
+        box-shadow: var(--shadow);
+        cursor: pointer;
+        user-select: none;
+      }
+      .panel {
+        position: fixed;
+        right: 16px;
+        top: 84px;
+        width: 380px;
+        max-height: calc(100vh - 120px);
+        overflow: auto;
+        padding: 12px;
+        background: var(--panel);
+        border: 1px solid var(--panel-brd);
+        border-radius: 14px;
+        box-shadow: var(--shadow);
+        z-index: 30;
+        font-size: 14px;
+      }
+      .panel h3 {
+        margin: 6px 0 8px 0;
+        font-size: 14px;
+      }
+      .row {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+        margin: 6px 0;
+      }
+      .label {
+        font-size: 12px;
+        color: var(--muted);
+      }
+      .pill {
+        padding: 6px 10px;
+        border: 1px solid var(--panel-brd);
+        border-radius: 999px;
+        cursor: pointer;
+      }
+      .pill.active {
+        outline: 2px solid #9ec5ff;
+      }
+      .badge {
+        display: inline-block;
+        background: var(--path);
+        color: #001015;
+        border-radius: 8px;
+        padding: 4px 8px;
+        font-size: 12px;
+      }
+      .list {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+      }
+      .item {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 6px;
+        border: 1px dashed var(--panel-brd);
+        border-radius: 8px;
+        cursor: grab;
+      }
+      .item b {
+        width: 22px;
+        height: 22px;
+        display: grid;
+        place-items: center;
+        border-radius: 6px;
+        background: #00000012;
+      }
+      .legend {
+        position: fixed;
+        right: 16px;
+        bottom: 16px;
+        display: flex;
+        gap: 8px;
+        background: var(--panel);
+        border: 1px solid var(--panel-brd);
+        border-radius: 10px;
+        padding: 8px 10px;
+        box-shadow: var(--shadow);
+        z-index: 10;
+        font-size: 12px;
+        color: var(--text);
+      }
+      .dot {
+        width: 16px;
+        height: 10px;
+        border-radius: 2px;
+        display: inline-block;
+        border: 1px solid var(--panel-brd);
+      }
+      .favor {
+        cursor: pointer;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="topbar">
+      <div class="search">
+        🔎
+        <input id="searchInput" placeholder="Buscar ruas/POIs… (digite para filtrar)" />
+        <span id="favBtn" class="favor" title="Favoritos">⭐</span>
+      </div>
+      <button id="routeBtn" class="btn primary">▶ Rota A*</button>
+      <button id="altBtn" class="btn">Alternativa</button>
+      <button id="vehBtn" class="btn">Simular veículos</button>
+      <button id="isoBtn" class="btn">Isochrone</button>
+      <button id="measureBtn" class="btn">Medição</button>
+      <button id="exportBtn" class="btn">Exportar</button>
+      <button id="importBtn" class="btn">Importar</button>
+      <button id="themeBtn" class="btn">Tema</button>
+      <span id="pathInfo" class="badge" style="display: none"></span>
+    </div>
+
+    <div class="stack">
+      <div id="zoomIn" class="control"><b>+</b></div>
+      <div id="zoomOut" class="control"><b>−</b></div>
+      <div id="recenter" class="control">⌖</div>
+    </div>
+
+    <div class="panel" id="side">
+      <h3>POIs (clique adiciona waypoint) • <span class="label">⭐ para favoritar</span></h3>
+      <div class="row" id="poiRow" style="flex-wrap: wrap; gap: 6px"></div>
+
+      <h3>Paradas (Waypoints)</h3>
+      <div class="list" id="wpList"></div>
+      <div class="row">
+        <button id="clearWp" class="btn">Limpar paradas</button>
+        <span class="label">Ctrl = Início • Shift = Fim • arraste pinos</span>
+      </div>
+
+      <h3>Preferências</h3>
+      <div class="row toggle"><input id="avoidJam" type="checkbox" checked /><span class="label">Evitar trânsito pesado</span></div>
+      <div class="row toggle"><input id="avoidBlock" type="checkbox" checked /><span class="label">Evitar bloqueios</span></div>
+      <div class="row">
+        <span class="label">Heurística</span>
+        <select id="heuristic">
+          <option value="euclidean" selected>Euclidiana</option>
+          <option value="manhattan">Manhattan</option>
+        </select>
+        <span class="label" style="margin-left: auto">Trânsito pesa</span>
+        <input id="trafficWeight" type="range" min="0" max="3" step="0.1" value="1.4" /><span id="twLbl" class="label">1.4×</span>
+      </div>
+      <div class="row">
+        <span class="label">Clima</span>
+        <select id="weather">
+          <option value="clear" selected>Seco</option>
+          <option value="rain">Chuva (−15% velocidade)</option>
+        </select>
+        <span class="label" style="margin-left: auto">Perfil horário</span>
+        <select id="daypart">
+          <option value="off">Padrão</option>
+          <option value="morning">Pico manhã (+trânsito)</option>
+          <option value="evening">Pico tarde (+trânsito)</option>
+          <option value="night">Noite (−trânsito)</option>
+        </select>
+      </div>
+
+      <h3>Instruções</h3>
+      <div id="steps" class="list"></div>
+    </div>
+
+    <div class="legend">
+      <span><span class="dot" style="background: var(--minor-inner)"></span> Rua</span>
+      <span><span class="dot" style="background: var(--pri-inner)"></span> Arterial</span>
+      <span><span class="dot" style="background: #32d583"></span> Livre</span>
+      <span><span class="dot" style="background: #fbbc05"></span> Médio</span>
+      <span><span class="dot" style="background: #ea4335"></span> Pesado</span>
+      <span><span class="dot" style="background: var(--heat)"></span> Heatmap</span>
+    </div>
+
+    <canvas id="map"></canvas>
+
+    <script>
+      /* ======================================================
+   ULTRA MAPS — Single file (sem libs)
+   • A* sobre grafo viário com trânsito, semáforos, perfis
+   • Veículos simulados (respeitam sinais e replanejam)
+   • Curvas Bézier nas arteriais e rotatórias nos hubs
+   • Heatmap histórico e favoritos (localStorage)
+====================================================== */
+
+      /* ---------- Canvas & View ---------- */
+      const canvas = document.getElementById("map"),
+        ctx = canvas.getContext("2d");
+      let DPR = Math.max(1, devicePixelRatio || 1);
+      let view = { x: -800, y: -600, k: 1.1 };
+      function resize() {
+        const w = innerWidth,
+          h = innerHeight;
+        canvas.width = Math.floor(w * DPR);
+        canvas.height = Math.floor(h * DPR);
+        canvas.style.width = w + "px";
+        canvas.style.height = h + "px";
+        ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+        draw();
+      }
+      addEventListener("resize", resize);
+      function S2W(sx, sy) {
+        return { x: sx / view.k + view.x, y: sy / view.k + view.y };
+      }
+      function W2S(wx, wy) {
+        return { x: (wx - view.x) * view.k, y: (wy - view.y) * view.k };
+      }
+      let panning = false,
+        pan0,
+        view0;
+      canvas.addEventListener("mousedown", e => {
+        panning = true;
+        pan0 = { x: e.clientX, y: e.clientY };
+        view0 = { ...view };
+      });
+      addEventListener("mouseup", () => (panning = false));
+      addEventListener("mousemove", e => {
+        if (!panning) return;
+        const dx = e.clientX - pan0.x,
+          dy = e.clientY - pan0.y;
+        view.x = view0.x - dx / view.k;
+        view.y = view0.y - dy / view.k;
+        draw();
+      });
+      canvas.addEventListener(
+        "wheel",
+        e => {
+          e.preventDefault();
+          const s = Math.exp((e.deltaY > 0 ? -1 : 1) * 0.08);
+          zoomAt(e.clientX, e.clientY, s);
+        },
+        { passive: false }
+      );
+      document.getElementById("zoomIn").onclick = () => zoomAt(innerWidth / 2, innerHeight / 2, 1.2);
+      document.getElementById("zoomOut").onclick = () => zoomAt(innerWidth / 2, innerHeight / 2, 1 / 1.2);
+      document.getElementById("recenter").onclick = () => {
+        view = { x: -800, y: -600, k: 1.1 };
+        draw();
+      };
+      function zoomAt(mx, my, f) {
+        const wx = view.x + mx / view.k,
+          wy = view.y + my / view.k;
+        view.k = Math.max(0.45, Math.min(4, view.k * f));
+        view.x = wx - mx / view.k;
+        view.y = wy - my / view.k;
+        draw();
+      }
+
+      /* ---------- Graph ---------- */
+      const nodes = {},
+        adj = {};
+      let edges = [];
+      let nid = 0;
+      function addNode(x, y, signal = false, roundabout = false) {
+        const id = ++nid;
+        nodes[id] = { id, x, y, signal, rb: roundabout };
+        return id;
+      }
+      function segLen(a, b) {
+        return Math.hypot(a.x - b.x, a.y - b.y);
+      }
+      function addEdge(a, b, type, name, speed = type === "primary" ? 60 : 40) {
+        const A = nodes[a],
+          B = nodes[b],
+          len = segLen(A, B);
+        const e = { a, b, len, type, name, traffic: Math.random() * 0.3, speed_kmh: speed, signalDelay: 0, blocked: false, curve: type === "primary" };
+        edges.push(e);
+        (adj[a] ??= []).push(e);
+      }
+      function buildCity() {
+        const N = 7,
+          S = 220,
+          base = { x: 0, y: 0 };
+        const grid = [...Array(N)].map(() => Array(N));
+        for (let r = 0; r < N; r++)
+          for (let c = 0; c < N; c++) {
+            const jit = (Math.random() - 0.5) * 22;
+            const corner = r === 0 || c === 0 || r === N - 1 || c === N - 1;
+            grid[r][c] = addNode(base.x + c * S + jit, base.y + r * S + jit, (r + c) % 2 === 1, corner && r % 2 === 1 && c % 2 === 1);
+          }
+        // horizontais/verticais
+        for (let r = 0; r < N; r++)
+          for (let c = 0; c < N - 1; c++) {
+            const type = r % 2 === 0 ? "primary" : "minor",
+              nm = type === "primary" ? `Av. Central ${r + 1}` : `Rua ${r + 1}`;
+            addEdge(grid[r][c], grid[r][c + 1], type, nm);
+            addEdge(grid[r][c + 1], grid[r][c], type, nm);
+          }
+        for (let c = 0; c < N; c++)
+          for (let r = 0; r < N - 1; r++) {
+            const type = c % 2 === 0 ? "primary" : "minor",
+              nm = type === "primary" ? `Av. Noroeste ${c + 1}` : `Rua ${c + 1}`;
+            addEdge(grid[r][c], grid[r + 1][c], type, nm);
+            addEdge(grid[r + 1][c], grid[r][c], type, nm);
+          }
+        // diag leves
+        for (let r = 0; r < N - 1; r++)
+          for (let c = 0; c < N - 1; c++) {
+            if ((r + c) % 2 === 0) {
+              addEdge(grid[r][c], grid[r + 1][c + 1], "minor", "Travessa");
+              addEdge(grid[r + 1][c + 1], grid[r][c], "minor", "Travessa");
+            }
+          }
+        // perimetral
+        const ring = [grid[0][0], grid[0][N - 1], grid[N - 1][N - 1], grid[N - 1][0], grid[0][0]];
+        for (let i = 0; i < ring.length - 1; i++) {
+          addEdge(ring[i], ring[i + 1], "primary", "Perimetral", 70);
+          addEdge(ring[i + 1], ring[i], "primary", "Perimetral", 70);
+        }
+      }
+      buildCity();
+
+      /* ---------- POIs & Favorites ---------- */
+      const POIS = [
+        { name: "🍔 Burger Noroeste", x: -120, y: -60 },
+        { name: "☕ Café Central", x: 320, y: 240 },
+        { name: "🏥 Hospital", x: 120, y: 520 },
+        { name: "🏫 Escola", x: 620, y: 240 },
+        { name: "⛽ Posto", x: 240, y: -220 },
+        { name: "🏞️ Parque", x: -420, y: 180 },
+        { name: "🛒 Mercado", x: 480, y: -40 },
+        { name: "🛠 Oficina", x: -260, y: 440 },
+      ];
+      const poiRow = document.getElementById("poiRow");
+      const FAV_KEY = "ultra_maps_favs";
+      const favs = new Set(JSON.parse(localStorage.getItem(FAV_KEY) || "[]"));
+      function toggleFav(name) {
+        favs.has(name) ? favs.delete(name) : favs.add(name);
+        localStorage.setItem(FAV_KEY, JSON.stringify([...favs]));
+        renderPOIs();
+      }
+      function renderPOIs(filter = "") {
+        poiRow.innerHTML = "";
+        POIS.filter(p => p.name.toLowerCase().includes(filter.toLowerCase()))
+          .sort((a, b) => favs.has(b.name) - favs.has(a.name))
+          .forEach(p => {
+            const wrap = document.createElement("div");
+            wrap.className = "pill";
+            wrap.style.display = "flex";
+            wrap.style.gap = "8px";
+            wrap.style.alignItems = "center";
+            const star = document.createElement("span");
+            star.textContent = favs.has(p.name) ? "⭐" : "☆";
+            star.className = "favor";
+            star.onclick = ev => {
+              ev.stopPropagation();
+              toggleFav(p.name);
+            };
+            wrap.textContent = p.name + " ";
+            wrap.prepend(star);
+            wrap.onclick = () => addWaypointNearest(p.x, p.y);
+            poiRow.appendChild(wrap);
+          });
+      }
+      document.getElementById("favBtn").onclick = () => {
+        const s = document.getElementById("searchInput");
+        s.value = "";
+        renderPOIs("");
+        s.value = "☆";
+        renderPOIs("");
+      };
+      document.getElementById("searchInput").oninput = e => renderPOIs(e.target.value);
+
+      /* ---------- Traffic, Profiles, Weather ---------- */
+      const weatherSel = document.getElementById("weather");
+      const daypartSel = document.getElementById("daypart");
+      function profileTrafficMultiplier() {
+        const dp = daypartSel.value;
+        if (dp === "morning" || dp === "evening") return 1.25;
+        if (dp === "night") return 0.7;
+        return 1.0;
+      }
+      function weatherSpeedFactor() {
+        return weatherSel.value === "rain" ? 0.85 : 1.0;
+      }
+
+      function refreshTraffic() {
+        for (const e of edges) {
+          e.traffic = clamp(e.traffic + (Math.random() - 0.5) * 0.18, 0, 1);
+          const A = nodes[e.a],
+            B = nodes[e.b];
+          e.signalDelay = A.signal || B.signal ? (e.type === "primary" ? 8 : 5) : 0;
+          // bloqueios esporádicos
+          if (Math.random() < 0.01) e.blocked = true;
+          else if (e.blocked && Math.random() < 0.2) e.blocked = false;
+          // aplica perfil (escala)
+          e.traffic = clamp(e.traffic * profileTrafficMultiplier(), 0, 1);
+        }
+        draw();
+      }
+      setInterval(refreshTraffic, 2500);
+      function clamp(v, a, b) {
+        return Math.max(a, Math.min(b, v));
+      }
+
+      /* ---------- A* ---------- */
+      const heuristicSel = document.getElementById("heuristic");
+      const trafficWeight = document.getElementById("trafficWeight"),
+        twLbl = document.getElementById("twLbl");
+      const avoidJam = document.getElementById("avoidJam"),
+        avoidBlock = document.getElementById("avoidBlock");
+      twLbl.textContent = Number(trafficWeight.value).toFixed(1) + "×";
+      trafficWeight.oninput = () => (twLbl.textContent = Number(trafficWeight.value).toFixed(1) + "×");
+      weatherSel.onchange = autoRoute;
+      daypartSel.onchange = autoRoute;
+      avoidJam.onchange = autoRoute;
+      avoidBlock.onchange = autoRoute;
+      heuristicSel.onchange = autoRoute;
+
+      function Hn(a, b) {
+        return heuristicSel.value === "manhattan" ? Math.abs(a.x - b.x) + Math.abs(a.y - b.y) : Math.hypot(a.x - b.x, a.y - b.y);
+      }
+      function edgeTime(e) {
+        // seconds
+        if (avoidBlock.checked && e.blocked) return Infinity;
+        const speed = e.speed_kmh * weatherSpeedFactor();
+        const base = e.len / (speed / 3.6);
+        const w = Number(trafficWeight.value);
+        const jam = avoidJam.checked ? e.traffic * 1.5 : e.traffic;
+        return base * (1 + jam * w) + e.signalDelay;
+      }
+      function aStar(startId, endId) {
+        const open = new Set([String(startId)]),
+          closed = new Set();
+        const g = {},
+          f = {},
+          par = {};
+        for (const id in nodes) {
+          g[id] = Infinity;
+          f[id] = Infinity;
+          par[id] = null;
+        }
+        g[startId] = 0;
+        f[startId] = Hn(nodes[startId], nodes[endId]);
+        while (open.size) {
+          let cur = null,
+            best = Infinity;
+          for (const id of open) {
+            if (f[id] < best) {
+              best = f[id];
+              cur = id;
+            }
+          }
+          if (cur === String(endId)) {
+            const out = [];
+            let k = cur;
+            while (k) {
+              out.push(Number(k));
+              k = par[k];
+            }
+            return out.reverse();
+          }
+          open.delete(cur);
+          closed.add(cur);
+          for (const e of adj[cur] || []) {
+            const nid = String(e.b);
+            if (closed.has(nid)) continue;
+            const t = edgeTime(e);
+            if (!isFinite(t)) continue;
+            const cand = g[cur] + t;
+            if (!open.has(nid)) open.add(nid);
+            else if (cand >= g[nid]) continue;
+            par[nid] = cur;
+            g[nid] = cand;
+            f[nid] = g[nid] + Hn(nodes[nid], nodes[endId]);
+          }
+        }
+        return null;
+      }
+      function routeAStar(ids) {
+        let full = [],
+          total = 0;
+        for (let i = 0; i < ids.length - 1; i++) {
+          const seg = aStar(ids[i], ids[i + 1]);
+          if (!seg) return null;
+          if (i > 0) seg.shift();
+          full = full.concat(seg);
+        }
+        for (let i = 0; i < full.length - 1; i++) {
+          const e = (adj[full[i]] || []).find(x => x.b === full[i + 1]);
+          total += edgeTime(e);
+        }
+        return { path: full, secs: total };
+      }
+      function routeAlternative(base) {
+        if (!base?.path) return null;
+        const penal = new Set();
+        for (let i = 0; i < base.path.length - 1; i++) penal.add(base.path[i] + ">" + base.path[i + 1]);
+        function aStarAlt(a, b) {
+          const open = new Set([String(a)]),
+            closed = new Set();
+          const g = {},
+            f = {},
+            par = {};
+          for (const id in nodes) {
+            g[id] = Infinity;
+            f[id] = Infinity;
+            par[id] = null;
+          }
+          g[a] = 0;
+          f[a] = Hn(nodes[a], nodes[b]);
+          while (open.size) {
+            let cur = null,
+              best = Infinity;
+            for (const id of open) {
+              if (f[id] < best) {
+                best = f[id];
+                cur = id;
+              }
+            }
+            if (cur === String(b)) {
+              const out = [];
+              let k = cur;
+              while (k) {
+                out.push(Number(k));
+                k = par[k];
+              }
+              return out.reverse();
+            }
+            open.delete(cur);
+            closed.add(cur);
+            for (const e of adj[cur] || []) {
+              const nid = String(e.b);
+              if (closed.has(nid)) continue;
+              let t = edgeTime(e);
+              if (!isFinite(t)) continue;
+              if (penal.has(cur + ">" + nid)) t *= 1.35;
+              const cand = g[cur] + t;
+              if (!open.has(nid)) open.add(nid);
+              else if (cand >= g[nid]) continue;
+              par[nid] = cur;
+              g[nid] = cand;
+              f[nid] = g[nid] + Hn(nodes[nid], nodes[b]);
+            }
+          }
+          return null;
+        }
+        let full = [],
+          total = 0;
+        for (let i = 0; i < routeTargets.length - 1; i++) {
+          const seg = aStarAlt(routeTargets[i], routeTargets[i + 1]);
+          if (!seg) return null;
+          if (i > 0) seg.shift();
+          full = full.concat(seg);
+        }
+        for (let i = 0; i < full.length - 1; i++) {
+          const e = (adj[full[i]] || []).find(x => x.b === full[i + 1]);
+          total += edgeTime(e);
+        }
+        return { path: full, secs: total };
+      }
+
+      /* ---------- Start/End/Waypoints ---------- */
+      let startId = 1,
+        endId = Object.keys(nodes).length | 0,
+        waypoints = [];
+      let routeTargets = [startId, endId];
+      function nearestNodeXY(x, y) {
+        let best = null,
+          bd = Infinity;
+        for (const id in nodes) {
+          const n = nodes[id];
+          const d = (n.x - x) ** 2 + (n.y - y) ** 2;
+          if (d < bd) {
+            bd = d;
+            best = Number(id);
+          }
+        }
+        return best;
+      }
+      function addWaypointNearest(x, y) {
+        const id = nearestNodeXY(x, y);
+        waypoints.push(id);
+        syncTargets();
+        renderWp();
+        autoRoute();
+      }
+      function syncTargets() {
+        routeTargets = [startId, ...waypoints, endId];
+      }
+      const wpList = document.getElementById("wpList");
+      function renderWp() {
+        wpList.innerHTML = "";
+        waypoints.forEach((id, idx) => {
+          const div = document.createElement("div");
+          div.className = "item";
+          div.draggable = true;
+          div.innerHTML = `<b>${idx + 1}</b> <span>${fmt(nodes[id])}</span> <span style="margin-left:auto;cursor:pointer">✕</span>`;
+          div.querySelector("span:last-child").onclick = () => {
+            waypoints.splice(idx, 1);
+            syncTargets();
+            renderWp();
+            autoRoute();
+          };
+          div.addEventListener("dragstart", e => {
+            e.dataTransfer.setData("text/plain", idx);
+          });
+          div.addEventListener("dragover", e => e.preventDefault());
+          div.addEventListener("drop", e => {
+            e.preventDefault();
+            const from = +e.dataTransfer.getData("text/plain");
+            const to = idx;
+            const [it] = waypoints.splice(from, 1);
+            waypoints.splice(to, 0, it);
+            syncTargets();
+            renderWp();
+            autoRoute();
+          });
+          wpList.appendChild(div);
+        });
+      }
+      document.getElementById("clearWp").onclick = () => {
+        waypoints = [];
+        syncTargets();
+        renderWp();
+        autoRoute();
+      };
+      function fmt(n) {
+        return `(${Math.round(n.x)}, ${Math.round(n.y)})`;
+      }
+
+      /* Draggable pins + click set */
+      let dragging = null;
+      canvas.addEventListener("mousedown", e => {
+        const { x, y } = S2W(e.clientX, e.clientY);
+        if (hitPin(nodes[startId], x, y)) {
+          dragging = "start";
+          return;
+        }
+        if (hitPin(nodes[endId], x, y)) {
+          dragging = "end";
+          return;
+        }
+        for (let i = 0; i < waypoints.length; i++)
+          if (hitPin(nodes[waypoints[i]], x, y)) {
+            dragging = "wp:" + i;
+            return;
+          }
+      });
+      addEventListener("mouseup", e => {
+        if (!dragging) return;
+        const { x, y } = S2W(e.clientX, e.clientY);
+        const id = nearestNodeXY(x, y);
+        if (dragging === "start") startId = id;
+        else if (dragging === "end") endId = id;
+        else {
+          const i = +dragging.split(":")[1];
+          waypoints[i] = id;
+        }
+        dragging = null;
+        syncTargets();
+        renderWp();
+        autoRoute();
+      });
+      canvas.addEventListener("click", e => {
+        if (dragging) return;
+        const { x, y } = S2W(e.clientX, e.clientY);
+        const id = nearestNodeXY(x, y);
+        if (e.ctrlKey || e.metaKey) startId = id;
+        else if (e.shiftKey) endId = id;
+        else if (measuring) {
+          handleMeasureClick(x, y, id);
+          return;
+        }
+        syncTargets();
+        renderWp();
+        autoRoute();
+      });
+      function hitPin(n, wx, wy) {
+        return Math.hypot(n.x - wx, n.y - wy) < 16 / view.k;
+      }
+
+      /* ---------- Directions ---------- */
+      const stepsDiv = document.getElementById("steps");
+      function stepsFromPath(path) {
+        if (!path || path.length < 2) {
+          stepsDiv.innerHTML = "";
+          return;
+        }
+        const steps = [];
+        for (let i = 1; i < path.length; i++) {
+          const a = nodes[path[i - 1]],
+            b = nodes[path[i]];
+          const e = (adj[a.id] || []).find(z => z.b === b.id);
+          const name = e?.name || (e?.type === "primary" ? "Avenida" : "Rua");
+          const d = segLen(a, b);
+          const prev = i >= 2 ? nodes[path[i - 2]] : null;
+          const turn = prev ? turnTxt(prev, a, b) : "Siga";
+          steps.push({ turn, name, meters: Math.round(d) });
+        }
+        stepsDiv.innerHTML = "";
+        steps.forEach((s, i) => {
+          const el = document.createElement("div");
+          el.className = "item";
+          el.innerHTML = `<b>${i + 1}</b> <span>${s.turn}</span> <span style="opacity:.7">em</span> <strong>${s.name}</strong> <span style="margin-left:auto">${s.meters} m</span>`;
+          stepsDiv.appendChild(el);
+        });
+      }
+      function turnTxt(p, a, b) {
+        const ang = (v1, v2) => Math.atan2(v2.y - v1.y, v2.x - v1.x);
+        const t = ang(a, b) - ang(p, a);
+        const deg = (((t * 180) / Math.PI + 540) % 360) - 180;
+        if (Math.abs(deg) < 20) return "Siga em frente";
+        if (deg > 0) return deg > 100 ? "Esq. acentuada" : "Vire à esquerda";
+        return Math.abs(deg) > 100 ? "Dir. acentuada" : "Vire à direita";
+      }
+
+      /* ---------- Isochrone + Medição ---------- */
+      let showIso = false;
+      const isoSecs = 10 * 60;
+      let isoCache = null;
+      function computeIso() {
+        const distSec = {};
+        for (const id in nodes) distSec[id] = Infinity;
+        distSec[startId] = 0;
+        const q = [startId];
+        while (q.length) {
+          const u = q.shift();
+          for (const e of adj[u] || []) {
+            const t = edgeTime(e);
+            if (distSec[e.b] > distSec[u] + t) {
+              distSec[e.b] = distSec[u] + t;
+              if (distSec[e.b] <= isoSecs) q.push(e.b);
+            }
+          }
+        }
+        return distSec;
+      }
+      let measuring = false,
+        measurePts = [];
+      function handleMeasureClick(x, y, nodeId) {
+        if (measurePts.length >= 2) measurePts = [];
+        measurePts.push({ x, y, nodeId });
+        if (measurePts.length === 2) draw();
+      }
+
+      /* ---------- Vehicles Simulation ---------- */
+      let simRunning = false,
+        vehicles = [];
+      function spawnVehicles(count = 8) {
+        vehicles = [];
+        for (let i = 0; i < count; i++) {
+          const s = randomNode(),
+            t = randomNodeDiff(s);
+          const r = routeAStar([s, t]);
+          if (!r) continue;
+          vehicles.push(makeVehicle(r.path));
+        }
+      }
+      function randomNode() {
+        const ids = Object.keys(nodes);
+        return +ids[Math.floor(Math.random() * ids.length)];
+      }
+      function randomNodeDiff(a) {
+        let b = a;
+        while (b === a) b = randomNode();
+        return b;
+      }
+      function makeVehicle(path) {
+        return {
+          path,
+          idx: 0,
+          prog: 0,
+          speed: 18 + Math.random() * 10, // m/s aprox (ajustaremos por via)
+          wait: 0,
+          color: getVar("--veh"),
+        };
+      }
+      function advanceVehicles(dt) {
+        for (const v of vehicles) {
+          if (!v.path || v.path.length < 2) continue;
+          if (v.wait > 0) {
+            v.wait -= dt;
+            continue;
+          }
+          const a = nodes[v.path[v.idx]],
+            b = nodes[v.path[v.idx + 1]];
+          const e = (adj[a.id] || []).find(x => x.b === b.id);
+          if (!e) continue;
+          // velocidade efetiva
+          const speed = (e.speed_kmh / 3.6) * weatherSpeedFactor() * (1 - 0.4 * e.traffic);
+          v.prog += (speed * dt) / e.len;
+          // semáforo no nó de chegada
+          if (v.prog >= 1) {
+            const nxt = b;
+            if (nxt.signal && signalIsRed()) {
+              v.wait = 2 + Math.random() * 2;
+              v.prog = 0.99;
+              continue;
+            }
+            v.idx++;
+            v.prog = 0;
+            if (v.idx >= v.path.length - 1) {
+              // concluir: replanejar novo destino
+              const s = v.path[v.path.length - 1];
+              const t = randomNodeDiff(s);
+              const r = routeAStar([s, t]);
+              if (r) {
+                v.path = r.path;
+                v.idx = 0;
+                v.prog = 0;
+              }
+            }
+          }
+        }
+      }
+      function signalIsRed() {
+        const t = (Date.now() / 1000) % 9;
+        return t >= 6;
+      }
+      let lastTime = null;
+      function tick(ts) {
+        if (!simRunning) {
+          lastTime = null;
+          return;
+        }
+        if (lastTime == null) lastTime = ts;
+        const dt = Math.min(0.05, (ts - lastTime) / 1000);
+        lastTime = ts;
+        advanceVehicles(dt);
+        // heatmap logging (cada passo, marcar aresta)
+        for (const v of vehicles) {
+          const a = v.path?.[v.idx],
+            b = v.path?.[v.idx + 1];
+          if (!a || !b) continue;
+          logHeat(a, b);
+        }
+        draw();
+        requestAnimationFrame(tick);
+      }
+
+      /* Heatmap histórico (localStorage) */
+      const HEAT_KEY = "ultra_maps_heat";
+      let heat = JSON.parse(localStorage.getItem(HEAT_KEY) || "{}");
+      function logHeat(a, b) {
+        const k = a + ">" + b;
+        heat[k] = (heat[k] || 0) + 1;
+        if (Math.random() < 0.01) localStorage.setItem(HEAT_KEY, JSON.stringify(heat));
+      }
+
+      /* ---------- UI Buttons ---------- */
+      const routeBtn = document.getElementById("routeBtn"),
+        altBtn = document.getElementById("altBtn");
+      const vehBtn = document.getElementById("vehBtn"),
+        isoBtn = document.getElementById("isoBtn"),
+        measureBtn = document.getElementById("measureBtn");
+      const pathInfo = document.getElementById("pathInfo");
+      routeBtn.onclick = () => autoRoute();
+      altBtn.onclick = () => {
+        if (currentMain) {
+          currentAlt = routeAlternative(currentMain);
+          draw();
+          showSummary();
+        }
+      };
+      vehBtn.onclick = () => {
+        simRunning = !simRunning;
+        vehBtn.classList.toggle("primary", simRunning);
+        if (simRunning && vehicles.length === 0) spawnVehicles(10);
+        if (simRunning) requestAnimationFrame(tick);
+        draw();
+      };
+      isoBtn.onclick = () => {
+        showIso = !showIso;
+        isoCache = null;
+        draw();
+      };
+      measureBtn.onclick = () => {
+        measuring = !measuring;
+        measurePts = [];
+        measureBtn.classList.toggle("primary", measuring);
+        draw();
+      };
+      document.getElementById("exportBtn").onclick = exportJSON;
+      document.getElementById("importBtn").onclick = importJSON;
+      document.getElementById("themeBtn").onclick = () => {
+        document.body.classList.toggle("dark");
+        draw();
+      };
+
+      /* ---------- Routing state ---------- */
+      let currentMain = null,
+        currentAlt = null;
+      function autoRoute() {
+        syncTargets();
+        currentMain = routeAStar(routeTargets);
+        currentAlt = currentMain ? routeAlternative(currentMain) : null;
+        stepsFromPath(currentMain?.path);
+        showSummary();
+        draw();
+      }
+      function showSummary() {
+        if (!currentMain) {
+          pathInfo.style.display = "inline-block";
+          pathInfo.textContent = "Sem rota";
+          return;
+        }
+        const m = (currentMain.secs / 60).toFixed(1);
+        let t = `Rota A: ~${m} min`;
+        if (currentAlt) {
+          const mb = (currentAlt.secs / 60).toFixed(1);
+          t += ` • Alt: ~${mb} min`;
+        }
+        pathInfo.style.display = "inline-block";
+        pathInfo.textContent = t;
+      }
+
+      /* ---------- Rendering ---------- */
+      const parks = [
+        { x: -360, y: -140, rw: 220, rh: 140 },
+        { x: 660, y: 90, rw: 200, rh: 120 },
+      ];
+      const waters = [{ x: 210, y: -320, rw: 160, rh: 90 }];
+      function getVar(v) {
+        return getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+      }
+      function draw() {
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.setTransform(view.k * DPR, 0, 0, view.k * DPR, -view.x * view.k * DPR, -view.y * view.k * DPR);
+
+        // base + blobs
+        ctx.fillStyle = getVar("--land");
+        ctx.fillRect(view.x - 5000, view.y - 5000, 20000, 20000);
+        ctx.fillStyle = getVar("--park");
+        parks.forEach(b => blob(b));
+        ctx.fillStyle = getVar("--water");
+        waters.forEach(b => blob(b));
+
+        // group edges
+        const prim = [],
+          minor = [];
+        for (const e of edges) {
+          if (e.a < e.b) (e.type === "primary" ? prim : minor).push(e);
+        }
+        roadGroup(minor, "--minor-casing", "--minor-inner", 18, 10, true);
+        roadGroup(prim, "--pri-casing", "--pri-inner", 26, 15, true);
+        laneMarks(prim, 2.2);
+        laneMarks(minor, 1.6);
+
+        // rotatórias
+        drawRoundabouts();
+
+        // trânsito
+        trafficOverlay(prim);
+        trafficOverlay(minor);
+
+        // isochrone
+        if (showIso) {
+          if (!isoCache) isoCache = computeIso();
+          ctx.fillStyle = getVar("--iso");
+          for (const id in nodes) {
+            if (isoCache[id] <= isoSecs) {
+              round(nodes[id].x - 18, nodes[id].y - 18, 36, 36, 10, true, false);
+            }
+          }
+        }
+
+        // paths
+        if (currentAlt?.path) drawPath(currentAlt.path, getVar("--altpath"), 8);
+        if (currentMain?.path) drawPath(currentMain.path, getVar("--path"), 9);
+
+        // pins
+        drawPin(nodes[startId], "#10b981");
+        drawPin(nodes[endId], "#ec4899");
+        waypoints.forEach(id => drawPin(nodes[id], "#fbbf24"));
+
+        // POIs & labels
+        POIS.forEach(p => drawPOI(p));
+        labels(prim, 14);
+        labels(minor, 12);
+
+        // vehicles
+        drawVehicles();
+
+        // measuring
+        if (measuring) drawMeasure();
+      }
+
+      function roadGroup(g, cvar, ivar, wc, wi, bezier = false) {
+        ctx.lineCap = "round";
+        ctx.lineJoin = "round";
+        // casing
+        ctx.strokeStyle = getVar(cvar);
+        ctx.lineWidth = wc;
+        ctx.beginPath();
+        g.forEach(e => strokeEdge(e, false, bezier));
+        ctx.stroke();
+        // inner
+        ctx.strokeStyle = getVar(ivar);
+        ctx.lineWidth = wi;
+        ctx.beginPath();
+        g.forEach(e => strokeEdge(e, true, bezier));
+        ctx.stroke();
+      }
+      function strokeEdge(e, inner = false, bezier = false) {
+        const A = nodes[e.a],
+          B = nodes[e.b];
+        if (bezier && e.curve) {
+          const k = 0.18;
+          const mx = (A.x + B.x) / 2,
+            my = (A.y + B.y) / 2;
+          const nx = -(B.y - A.y),
+            ny = B.x - A.x;
+          const cx = mx + nx * k,
+            cy = my + ny * k;
+          ctx.moveTo(A.x, A.y);
+          ctx.quadraticCurveTo(cx, cy, B.x, B.y);
+        } else {
+          ctx.moveTo(A.x, A.y);
+          ctx.lineTo(B.x, B.y);
+        }
+      }
+      function laneMarks(g, w) {
+        ctx.save();
+        ctx.strokeStyle = getVar("--lane");
+        ctx.lineWidth = w;
+        ctx.setLineDash([18, 14]);
+        ctx.beginPath();
+        g.forEach(e => strokeEdge(e, true, true));
+        ctx.stroke();
+        ctx.restore();
+      }
+      function trafficOverlay(g) {
+        ctx.save();
+        for (const e of g) {
+          const A = nodes[e.a],
+            B = nodes[e.b];
+          ctx.globalAlpha = 0.6;
+          ctx.lineWidth = 5;
+          ctx.strokeStyle = e.blocked ? getVar("--blocked") : jamColor(e);
+          ctx.setLineDash(e.blocked ? [6, 6] : []);
+          ctx.beginPath();
+          strokeEdge(e, true, true);
+          ctx.stroke();
+          ctx.setLineDash([]);
+        }
+        ctx.restore();
+      }
+      function jamColor(e) {
+        return e.traffic < 0.33 ? "#32d583" : e.traffic < 0.66 ? "#fbbc05" : "#ea4335";
+      }
+
+      function drawRoundabouts() {
+        ctx.save();
+        ctx.strokeStyle = getVar("--pri-inner");
+        ctx.lineWidth = 12;
+        for (const id in nodes) {
+          const n = nodes[id];
+          if (!n.rb) continue;
+          ctx.beginPath();
+          ctx.arc(n.x, n.y, 20, 0, Math.PI * 2);
+          ctx.stroke();
+          ctx.strokeStyle = getVar("--pri-casing");
+          ctx.lineWidth = 20;
+          ctx.globalCompositeOperation = "destination-over";
+          ctx.beginPath();
+          ctx.arc(n.x, n.y, 20, 0, Math.PI * 2);
+          ctx.stroke();
+        }
+        ctx.restore();
+      }
+
+      function drawPath(path, color, width) {
+        ctx.save();
+        ctx.strokeStyle = color;
+        ctx.lineWidth = width;
+        ctx.lineCap = "round";
+        ctx.beginPath();
+        for (let i = 0; i < path.length; i++) {
+          const n = nodes[path[i]];
+          if (i === 0) ctx.moveTo(n.x, n.y);
+          else ctx.lineTo(n.x, n.y);
+        }
+        ctx.stroke();
+        ctx.restore();
+      }
+
+      function drawPin(n, color) {
+        ctx.fillStyle = "rgba(0,0,0,.18)";
+        ctx.beginPath();
+        ctx.ellipse(n.x, n.y + 10, 10, 4, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = color;
+        ctx.beginPath();
+        ctx.moveTo(n.x, n.y - 14);
+        ctx.bezierCurveTo(n.x + 14, n.y - 14, n.x + 14, n.y + 4, n.x, n.y + 16);
+        ctx.bezierCurveTo(n.x - 14, n.y + 4, n.x - 14, n.y - 14, n.x, n.y - 14);
+        ctx.fill();
+        ctx.fillStyle = "#fff";
+        ctx.beginPath();
+        ctx.arc(n.x, n.y, 6, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      function drawPOI(p) {
+        ctx.fillStyle = "#11182733";
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, 10, 0, Math.PI * 2);
+        ctx.fill();
+        drawLabel(p.x, p.y - 18, p.name);
+      }
+      function labels(group, size) {
+        ctx.save();
+        ctx.font = `${size}px Inter, system-ui, sans-serif`;
+        ctx.fillStyle = getVar("--label");
+        group.forEach(e => {
+          const A = nodes[e.a],
+            B = nodes[e.b];
+          const mx = (A.x + B.x) / 2,
+            my = (A.y + B.y) / 2;
+          const ang = Math.atan2(B.y - A.y, B.x - A.x);
+          const text = e.name || "Rua",
+            pad = 4,
+            w = ctx.measureText(text).width + pad * 2,
+            h = size + 6;
+          ctx.save();
+          ctx.translate(mx, my);
+          ctx.rotate(ang);
+          ctx.fillStyle = getVar("--label-bg");
+          round(-w / 2, -h / 2, w, h, 6, true, false);
+          ctx.fillStyle = getVar("--label");
+          ctx.fillText(text, -w / 2 + pad, size * 0.35);
+          ctx.restore();
+        });
+        ctx.restore();
+      }
+      function drawLabel(x, y, text) {
+        ctx.save();
+        ctx.font = "12px Inter, system-ui, sans-serif";
+        const pad = 6;
+        const w = ctx.measureText(text).width + pad * 2;
+        const h = 18;
+        ctx.fillStyle = getVar("--label-bg");
+        round(x - w / 2, y - h / 2, w, h, 6, true, false);
+        ctx.fillStyle = getVar("--label");
+        ctx.fillText(text, x - w / 2 + pad, y + 5);
+        ctx.restore();
+      }
+
+      function drawVehicles() {
+        for (const v of vehicles) {
+          const a = nodes[v.path[v.idx]],
+            b = nodes[v.path[v.idx + 1]] || a;
+          const x = a.x + (b.x - a.x) * v.prog,
+            y = a.y + (b.y - a.y) * v.prog;
+          const ang = Math.atan2((b?.y || a.y) - a.y, (b?.x || a.x) - a.x);
+          // shadow
+          ctx.fillStyle = getVar("--veh-shadow");
+          ctx.beginPath();
+          ctx.ellipse(x, y + 5, 8, 3, 0, 0, Math.PI * 2);
+          ctx.fill();
+          // body
+          ctx.save();
+          ctx.translate(x, y);
+          ctx.rotate(ang);
+          ctx.fillStyle = getVar("--veh");
+          round(-9, -5, 18, 10, 3, true, false);
+          ctx.fillStyle = "#0ea5e9";
+          round(-3, -4, 6, 4, 2, true, false); // para-brisa
+          ctx.restore();
+        }
+      }
+
+      function drawMeasure() {
+        ctx.save();
+        ctx.strokeStyle = getVar("--altpath");
+        ctx.lineWidth = 2;
+        ctx.setLineDash([8, 6]);
+        if (measurePts.length === 1) {
+          const a = measurePts[0],
+            b = S2W(mouse.x, mouse.y);
+          ctx.beginPath();
+          ctx.moveTo(a.x, a.y);
+          ctx.lineTo(b.x, b.y);
+          ctx.stroke();
+        }
+        if (measurePts.length === 2) {
+          const a = measurePts[0],
+            b = measurePts[1];
+          ctx.beginPath();
+          ctx.moveTo(a.x, a.y);
+          ctx.lineTo(b.x, b.y);
+          ctx.stroke();
+          const straight = Math.hypot(a.x - b.x, a.y - b.y);
+          let road = 0;
+          const path = a.nodeId && b.nodeId ? aStar(a.nodeId, b.nodeId) : null;
+          if (path) for (let i = 0; i < path.length - 1; i++) road += (adj[path[i]] || []).find(e => e.b === path[i + 1]).len;
+          drawLabel((a.x + b.x) / 2, (a.y + b.y) / 2, `${Math.round(straight)} m reta • ${Math.round(road)} m via`);
+        }
+        ctx.restore();
+      }
+
+      /* Shapes */
+      function blob(b) {
+        ctx.beginPath();
+        for (let a = 0; a < Math.PI * 2; a += Math.PI / 10) {
+          const x = b.x + Math.cos(a) * b.rw * (0.85 + Math.random() * 0.3),
+            y = b.y + Math.sin(a) * b.rh * (0.85 + Math.random() * 0.3);
+          if (a === 0) ctx.moveTo(x, y);
+          else ctx.lineTo(x, y);
+        }
+        ctx.closePath();
+        ctx.fill();
+      }
+      function round(x, y, w, h, r, fill, stroke) {
+        ctx.beginPath();
+        ctx.moveTo(x + r, y);
+        ctx.arcTo(x + w, y, x + w, y + h, r);
+        ctx.arcTo(x + w, y + h, x, y + h, r);
+        ctx.arcTo(x, y + h, x, y, r);
+        ctx.arcTo(x, y, x + w, y, r);
+        if (fill) ctx.fill();
+        if (stroke) ctx.stroke();
+      }
+
+      /* Mouse live for measure */
+      const mouse = { x: 0, y: 0 };
+      addEventListener("mousemove", e => {
+        mouse.x = e.clientX;
+        mouse.y = e.clientY;
+        if (measuring) draw();
+      });
+
+      /* ---------- Export/Import ---------- */
+      function exportJSON() {
+        const data = { nodes, edges, POIS, startId, endId, waypoints, heat };
+        const blob = new Blob([JSON.stringify(data)], { type: "application/json" });
+        const a = document.createElement("a");
+        a.href = URL.createObjectURL(blob);
+        a.download = "ultra_map.json";
+        a.click();
+      }
+      function importJSON() {
+        const inp = document.createElement("input");
+        inp.type = "file";
+        inp.accept = "application/json";
+        inp.onchange = () => {
+          const f = inp.files[0];
+          if (!f) return;
+          const r = new FileReader();
+          r.onload = () => {
+            try {
+              const d = JSON.parse(r.result);
+              // load (básico)
+              Object.keys(nodes).forEach(k => delete nodes[k]);
+              edges.length = 0;
+              Object.keys(adj).forEach(k => delete adj[k]);
+              for (const id in d.nodes) nodes[id] = d.nodes[id];
+              d.edges.forEach(e => {
+                edges.push(e);
+                (adj[e.a] ??= []).push(e);
+              });
+              POIS.length = 0;
+              d.POIS?.forEach(p => POIS.push(p));
+              startId = d.startId;
+              endId = d.endId;
+              waypoints = d.waypoints || [];
+              heat = d.heat || {};
+              localStorage.setItem(HEAT_KEY, JSON.stringify(heat));
+              syncTargets();
+              renderWp();
+              renderPOIs();
+              autoRoute();
+              draw();
+            } catch {
+              alert("JSON inválido");
+            }
+          };
+          r.readAsText(f);
+        };
+        inp.click();
+      }
+
+      /* ---------- Init ---------- */
+      function init() {
+        resize();
+        renderPOIs();
+        renderWp();
+        autoRoute();
+        refreshTraffic();
+      }
+      init();
+
+      /* ---------- Minor utils ---------- */
+      function getVar(v) {
+        return getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+      }
+
+      /* Boot vehicles off */
+      spawnVehicles(30); // prontos para simulação
+      /* End */
+    </script>
+  </body>
+</html>
